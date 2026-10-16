@@ -185,7 +185,7 @@ details.bought .row { opacity: 0.8; }
     <h2>Start with what you have</h2>
     <p>Enter how much money you have right now. Everything you log after this adjusts it automatically.</p>
     <form class="bal-form" id="startForm">
-      <input id="startBal" type="number" step="0.01" inputmode="decimal" placeholder="e.g. 850.00" aria-label="Starting balance" required>
+      <input id="startBal" type="number" step="0.01" inputmode="decimal" placeholder="e.g. 3500.00" aria-label="Starting balance" required>
       <button class="btn" type="submit">Set balance</button>
       <button class="btn ghost" type="button" data-act="sample">Try it with example numbers</button>
     </form>
@@ -261,10 +261,10 @@ details.bought .row { opacity: 0.8; }
       <h3>Currency</h3>
       <label class="field"><span>Show amounts in</span>
         <select id="currency">
-          <option value="GBP">£ British pound</option><option value="USD">$ US dollar</option><option value="EUR">€ Euro</option>
+          <option value="SAR">SAR Saudi riyal</option><option value="GBP">£ British pound</option><option value="USD">$ US dollar</option><option value="EUR">€ Euro</option>
           <option value="CAD">$ Canadian dollar</option><option value="AUD">$ Australian dollar</option><option value="NZD">$ New Zealand dollar</option>
           <option value="INR">₹ Indian rupee</option><option value="ZAR">R South African rand</option><option value="NGN">₦ Nigerian naira</option>
-          <option value="AED">AED UAE dirham</option><option value="SAR">SAR Saudi riyal</option><option value="JPY">¥ Japanese yen</option>
+          <option value="AED">AED UAE dirham</option><option value="JPY">¥ Japanese yen</option>
         </select>
       </label>
     </div>
@@ -290,7 +290,7 @@ details.bought .row { opacity: 0.8; }
   const PRIO_LABEL = { need: 'Need', want: 'Want', someday: 'Someday' };
   const IN_CATS = ['Pay', 'Gift', 'Refund', 'Other income'];
 
-  const blankMain = () => ({ currency: 'GBP', startBalance: 0, balanceSet: false, budgets: [], wishlist: [] });
+  const blankMain = () => ({ currency: 'SAR', startBalance: 0, balanceSet: false, budgets: [], wishlist: [] });
   let main = blankMain();
   let txs = [];
   let mode = 'local';
@@ -311,7 +311,7 @@ details.bought .row { opacity: 0.8; }
 
   const fmts = {};
   function money(c) {
-    const cur = main.currency || 'GBP';
+    const cur = main.currency || 'SAR';
     if (!fmts[cur]) { try { fmts[cur] = new Intl.NumberFormat(undefined, { style: 'currency', currency: cur }); } catch (e) { fmts[cur] = new Intl.NumberFormat(undefined, { minimumFractionDigits: 2 }); } }
     return fmts[cur].format((c || 0) / 100);
   }
@@ -353,7 +353,7 @@ details.bought .row { opacity: 0.8; }
   function loadLocal() {
     try {
       const raw = localStorage.getItem(LS_KEY);
-      if (raw) { const d = JSON.parse(raw); main = { ...blankMain(), ...(d.main || {}) }; txs = Array.isArray(d.txs) ? d.txs : []; }
+      if (raw) { const d = JSON.parse(raw); main = { ...blankMain(), ...(d.main || {}) }; if (!main.currencyChosen) main.currency = 'SAR'; txs = Array.isArray(d.txs) ? d.txs : []; }
     } catch (e) {}
   }
   function onWriteErr(e) {
@@ -403,6 +403,7 @@ details.bought .row { opacity: 0.8; }
       mainRef.onSnapshot((snap) => {
         if (savedSeq < mainSeq) return; // a local edit is still on its way up
         main = snap.exists ? { ...blankMain(), ...clone(snap.data()) } : blankMain();
+        if (!main.currencyChosen) main.currency = 'SAR';
         gotMain = true; check();
       }, () => setSync('error', "Couldn't load your data. Reload to try again."));
       cloud.txCol.onSnapshot((snap) => {
@@ -493,7 +494,7 @@ details.bought .row { opacity: 0.8; }
     const totalLimit = main.budgets.reduce((s, b) => s + b.limit, 0);
     const totalSpent = main.budgets.reduce((s, b) => s + (byCat.get(b.name) || 0), 0);
     $('#budMeta').textContent = main.budgets.length ? `${money(totalSpent)} of ${money(totalLimit)} used` : '';
-    if (!main.budgets.length) { $('#budList').innerHTML = '<p class="none">No budgets yet. Add one above, like Food at 300 a month.</p>'; return; }
+    if (!main.budgets.length) { $('#budList').innerHTML = '<p class="none">No budgets yet. Add one above, like Food at 1,200 a month.</p>'; return; }
     let html = '';
     for (const b of main.budgets) {
       const spent = byCat.get(b.name) || 0, pct = b.limit ? spent / b.limit : 0;
@@ -558,23 +559,23 @@ details.bought .row { opacity: 0.8; }
     const cm = curMonth(), d = new Date().getDate();
     const day = (n) => cm + '-' + pad(Math.max(1, Math.min(d, n)));
     main.budgets = [
-      { id: newId(), name: 'Food', limit: 30000 }, { id: newId(), name: 'Transport', limit: 8000 },
-      { id: newId(), name: 'Going out', limit: 12000 }, { id: newId(), name: 'Bills', limit: 45000 },
+      { id: newId(), name: 'Food', limit: 120000 }, { id: newId(), name: 'Transport', limit: 40000 },
+      { id: newId(), name: 'Going out', limit: 50000 }, { id: newId(), name: 'Bills', limit: 250000 },
     ];
     main.wishlist = [
-      { id: newId(), name: 'Running shoes (example)', price: 9500, priority: 'need', url: '', bought: false, added: Date.now() },
-      { id: newId(), name: 'Wireless headphones (example)', price: 14900, priority: 'want', url: '', bought: false, added: Date.now() },
-      { id: newId(), name: 'New laptop (example)', price: 110000, priority: 'someday', url: '', bought: false, added: Date.now() },
+      { id: newId(), name: 'Running shoes (example)', price: 35000, priority: 'need', url: '', bought: false, added: Date.now() },
+      { id: newId(), name: 'Wireless headphones (example)', price: 60000, priority: 'want', url: '', bought: false, added: Date.now() },
+      { id: newId(), name: 'New laptop (example)', price: 450000, priority: 'someday', url: '', bought: false, added: Date.now() },
     ];
     const sample = [
-      ['in', 165000, 'Pay', 'Monthly pay (example)', 1], ['out', 45000, 'Bills', 'Rent share (example)', 1],
-      ['out', 6240, 'Food', 'Weekly shop (example)', 3], ['out', 2800, 'Transport', 'Bus pass top-up (example)', 4],
-      ['out', 3850, 'Going out', 'Cinema and dinner (example)', 6], ['out', 5410, 'Food', 'Weekly shop (example)', 10],
-      ['out', 1299, 'Other', 'Phone case (example)', 12], ['out', 4600, 'Going out', 'Concert ticket (example)', 14],
+      ['in', 800000, 'Pay', 'Monthly salary (example)', 1], ['out', 250000, 'Bills', 'Rent (example)', 1],
+      ['out', 31500, 'Food', 'Grocery run (example)', 3], ['out', 12000, 'Transport', 'Fuel (example)', 4],
+      ['out', 18500, 'Going out', 'Dinner with friends (example)', 6], ['out', 27400, 'Food', 'Grocery run (example)', 10],
+      ['out', 6900, 'Other', 'Phone case (example)', 12], ['out', 22000, 'Going out', 'Cinema and coffee (example)', 14],
     ];
     const made = sample.map(([type, amount, category, note, n], i) => ({ id: newId() + i, type, amount, category, note, date: day(n), created: Date.now() + i }));
     let net = 0; for (const t of [...txs, ...made]) net += t.type === 'in' ? t.amount : -t.amount;
-    main.startBalance = 124000 - net; main.balanceSet = true;
+    main.startBalance = 500000 - net; main.balanceSet = true;
     viewMonth = cm;
     commitMain();
     made.forEach(addTx);
@@ -582,7 +583,7 @@ details.bought .row { opacity: 0.8; }
 
   async function clearAll() {
     const ids = txs.map((t) => t.id);
-    txs = []; main = { ...blankMain(), currency: main.currency };
+    txs = []; main = { ...blankMain(), currency: main.currency, currencyChosen: main.currencyChosen };
     commitMain();
     if (mode === 'cloud') {
       try { for (const id of ids) await cloud.txCol.doc(id).delete(); setSync('ok'); } catch (e) { onWriteErr(e); }
@@ -618,7 +619,7 @@ details.bought .row { opacity: 0.8; }
   document.addEventListener('change', (e) => {
     const el = e.target;
     if (el.name === 'txType') return renderCats();
-    if (el.id === 'currency') { main.currency = el.value; return commitMain(); }
+    if (el.id === 'currency') { main.currency = el.value; main.currencyChosen = true; return commitMain(); }
     if (el.dataset.act === 'limit') {
       const b = main.budgets.find((x) => x.id === el.dataset.id), v = toCents(el.value);
       if (b && v > 0 && v !== b.limit) { b.limit = v; commitMain(); } else if (b) el.value = (b.limit / 100).toFixed(2);
