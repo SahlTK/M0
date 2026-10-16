@@ -1,0 +1,684 @@
+<title>Pocket Ledger</title>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<meta name="claude:viewport-fit-sides" content="cover">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:opsz,wght@12..96,600;12..96,800&family=Public+Sans:wght@400;500;600&family=JetBrains+Mono:wght@400;600&display=swap">
+<style>
+/* Layout: one ledger column. Balance band on top, tabbed panels (spending, budgets, wishlist, settings) below. */
+:root {
+  --bg: #EBEFEB; --surface: #FAFCFA; --ink: #16201B; --muted: #5A6862; --line: #D2DAD4;
+  --accent: #1C6A50; --accent-ink: #F3FBF7; --accent-soft: #D9EAE1;
+  --good: #22784A; --good-soft: #DCEFE2; --warn: #94600F; --warn-soft: #F5E8D0; --bad: #B03A3A; --bad-soft: #F5DDDA;
+  --f-display: "Bricolage Grotesque", "Avenir Next", system-ui, sans-serif;
+  --f-body: "Public Sans", system-ui, -apple-system, "Segoe UI", sans-serif;
+  --f-num: "JetBrains Mono", ui-monospace, "SF Mono", Menlo, Consolas, monospace;
+  --r: 10px;
+}
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    --bg: #0F1512; --surface: #172019; --ink: #E4EBE6; --muted: #92A198; --line: #29352E;
+    --accent: #5BC497; --accent-ink: #0A140F; --accent-soft: #1D3328;
+    --good: #5BC497; --good-soft: #1B3226; --warn: #E2B24F; --warn-soft: #3A2E15; --bad: #F07B76; --bad-soft: #3C1F1E;
+    color-scheme: dark;
+  }
+}
+:root[data-theme="dark"] {
+  --bg: #0F1512; --surface: #172019; --ink: #E4EBE6; --muted: #92A198; --line: #29352E;
+  --accent: #5BC497; --accent-ink: #0A140F; --accent-soft: #1D3328;
+  --good: #5BC497; --good-soft: #1B3226; --warn: #E2B24F; --warn-soft: #3A2E15; --bad: #F07B76; --bad-soft: #3C1F1E;
+  color-scheme: dark;
+}
+* { box-sizing: border-box; }
+[hidden] { display: none !important; }
+body { background: var(--bg); color: var(--ink); font-family: var(--f-body); font-size: 15px; line-height: 1.5; }
+.app { max-width: 860px; margin: 0 auto; padding-block: 20px 72px; padding-left: max(16px, env(safe-area-inset-left, 0px)); padding-right: max(16px, env(safe-area-inset-right, 0px)); display: grid; gap: 20px; }
+h1, h2, h3 { font-family: var(--f-display); margin: 0; text-wrap: balance; }
+button, input, select { font: inherit; color: inherit; }
+:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+.num { font-family: var(--f-num); font-variant-numeric: tabular-nums; }
+
+.top { display: flex; align-items: center; justify-content: space-between; gap: 12px; flex-wrap: wrap; }
+.brand { font-family: var(--f-display); font-weight: 800; font-size: 1.15rem; letter-spacing: -0.01em; display: flex; align-items: center; gap: 8px; }
+.brand::before { content: ""; width: 14px; height: 14px; border-radius: 3px; background: var(--accent); transform: rotate(45deg); }
+.sync { font-size: 0.8rem; color: var(--muted); display: flex; align-items: center; gap: 6px; }
+.sync::before { content: ""; width: 7px; height: 7px; border-radius: 50%; background: var(--muted); }
+.sync[data-state="ok"]::before { background: var(--good); }
+.sync[data-state="saving"]::before, .sync[data-state="loading"]::before { background: var(--warn); }
+.sync[data-state="error"] { color: var(--bad); }
+.sync[data-state="error"]::before { background: var(--bad); }
+
+/* Balance band */
+.summary { background: var(--surface); border: 1px solid var(--line); border-radius: 14px; padding: 22px; display: grid; gap: 20px; }
+.label { font-size: 0.72rem; text-transform: uppercase; letter-spacing: 0.08em; color: var(--muted); font-weight: 600; }
+.bal { display: grid; gap: 4px; }
+.bal-row { display: flex; align-items: baseline; gap: 14px; flex-wrap: wrap; }
+.big { font-family: var(--f-display); font-weight: 800; font-size: clamp(2.3rem, 9vw, 3.5rem); line-height: 1.05; letter-spacing: -0.03em; font-variant-numeric: tabular-nums; }
+.big.neg { color: var(--bad); }
+.bal-form { display: flex; gap: 8px; flex-wrap: wrap; align-items: center; }
+.bal-form input { width: 11rem; }
+.stats { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 1px; margin: 0; background: var(--line); border: 1px solid var(--line); border-radius: var(--r); overflow: hidden; }
+.stats > div { background: var(--surface); padding: 12px 14px; display: grid; gap: 2px; align-content: start; }
+.stats dt { font-size: 0.75rem; color: var(--muted); }
+.stats dd { margin: 0; font-family: var(--f-num); font-variant-numeric: tabular-nums; font-weight: 600; font-size: 1.05rem; }
+.stats dd.neg { color: var(--bad); }
+.stats small { font-size: 0.7rem; color: var(--muted); line-height: 1.3; }
+@media (max-width: 640px) { .stats { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
+
+/* Tabs */
+.tabs { display: flex; gap: 4px; border-bottom: 1px solid var(--line); overflow-x: auto; }
+.tab { background: none; border: 0; padding: 10px 14px; font-weight: 600; color: var(--muted); cursor: pointer; border-bottom: 2px solid transparent; margin-bottom: -1px; white-space: nowrap; }
+.tab[aria-selected="true"] { color: var(--ink); border-bottom-color: var(--accent); }
+.tab .count { font-family: var(--f-num); font-size: 0.75rem; color: var(--muted); margin-left: 4px; }
+.panel { display: grid; gap: 16px; }
+@media (max-width: 440px) { .tab { padding: 10px 9px; font-size: 0.9rem; } }
+
+/* Forms */
+.entry { background: var(--surface); border: 1px solid var(--line); border-radius: var(--r); padding: 16px; display: grid; gap: 12px; }
+.entry h3 { font-size: 1rem; }
+.fields { display: flex; flex-wrap: wrap; gap: 10px; align-items: end; }
+.field { display: grid; gap: 4px; flex: 1 1 140px; min-width: 0; }
+.field.wide { flex: 2 1 200px; }
+.field span { font-size: 0.75rem; color: var(--muted); font-weight: 500; }
+input, select { background: var(--bg); border: 1px solid var(--line); border-radius: 8px; padding: 9px 10px; width: 100%; min-width: 0; }
+input:focus, select:focus { border-color: var(--accent); }
+.seg { display: inline-flex; border: 1px solid var(--line); border-radius: 8px; overflow: hidden; }
+.seg label { cursor: pointer; }
+.seg input { position: absolute; opacity: 0; width: 1px; height: 1px; }
+.seg span { display: block; padding: 8px 14px; font-weight: 600; font-size: 0.85rem; color: var(--muted); }
+.seg input:checked + span { background: var(--accent); color: var(--accent-ink); }
+.seg input:focus-visible + span { outline: 2px solid var(--accent); outline-offset: -2px; }
+.btn { background: var(--accent); color: var(--accent-ink); border: 0; border-radius: 8px; padding: 9px 16px; font-weight: 600; cursor: pointer; white-space: nowrap; }
+.btn:hover { filter: brightness(1.08); }
+.btn.ghost { background: transparent; color: var(--ink); border: 1px solid var(--line); }
+.btn.small { padding: 5px 10px; font-size: 0.8rem; }
+.link-btn { background: none; border: 0; padding: 4px 6px; color: var(--muted); font-size: 0.8rem; cursor: pointer; border-radius: 6px; }
+.link-btn:hover { color: var(--ink); background: var(--bg); }
+.link-btn.armed { color: var(--bad); font-weight: 600; }
+.err { color: var(--bad); font-size: 0.85rem; margin: 0; }
+.err:empty { display: none; }
+
+/* Lists */
+.monthbar { display: flex; align-items: center; justify-content: space-between; gap: 8px; }
+.monthbar h2 { font-size: 1.25rem; }
+.monthbar .nav { display: flex; gap: 6px; }
+.monthbar .meta { font-size: 0.85rem; color: var(--muted); }
+.list { background: var(--surface); border: 1px solid var(--line); border-radius: var(--r); overflow: hidden; }
+.day { display: flex; justify-content: space-between; padding: 8px 16px; font-size: 0.75rem; font-weight: 600; color: var(--muted); text-transform: uppercase; letter-spacing: 0.06em; background: var(--bg); border-top: 1px solid var(--line); }
+.day:first-child { border-top: 0; }
+.row { display: flex; align-items: center; gap: 12px; padding: 11px 16px; border-top: 1px solid var(--line); }
+.day + .row { border-top: 0; }
+.list > .row:first-child { border-top: 0; }
+.what { flex: 1; min-width: 0; display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+.what .name { overflow-wrap: anywhere; }
+.what a { color: var(--ink); text-decoration-color: var(--line); text-underline-offset: 3px; }
+.chip { font-size: 0.72rem; padding: 2px 8px; border-radius: 999px; background: var(--bg); color: var(--muted); border: 1px solid var(--line); white-space: nowrap; }
+.pill { font-size: 0.75rem; padding: 2px 9px; border-radius: 999px; font-weight: 600; white-space: nowrap; }
+.pill.good { background: var(--good-soft); color: var(--good); }
+.pill.warn { background: var(--warn-soft); color: var(--warn); }
+.pill.bad { background: var(--bad-soft); color: var(--bad); }
+.amt { font-family: var(--f-num); font-variant-numeric: tabular-nums; font-weight: 600; white-space: nowrap; }
+.amt.in { color: var(--good); }
+.none { color: var(--muted); padding: 22px 16px; margin: 0; text-align: center; }
+
+.budget { padding: 14px 16px; border-top: 1px solid var(--line); display: grid; gap: 8px; }
+.list > .budget:first-child { border-top: 0; }
+.b-head, .b-foot { display: flex; align-items: center; justify-content: space-between; gap: 10px; flex-wrap: wrap; }
+.b-name { font-weight: 600; }
+.bar { height: 8px; border-radius: 999px; background: var(--bg); overflow: hidden; border: 1px solid var(--line); }
+.bar span { display: block; height: 100%; border-radius: 999px; }
+.bar .good { background: var(--good); } .bar .warn { background: var(--warn); } .bar .bad { background: var(--bad); }
+.b-foot { font-size: 0.85rem; color: var(--muted); }
+.b-limit { display: flex; align-items: center; gap: 6px; }
+.b-limit input { width: 7.5rem; padding: 5px 8px; font-family: var(--f-num); font-size: 0.85rem; }
+
+.wish { padding: 14px 16px; border-top: 1px solid var(--line); display: grid; gap: 8px; }
+.list > .wish:first-child { border-top: 0; }
+.wish .b-head { align-items: flex-start; }
+.wish-actions { display: flex; gap: 4px; align-items: center; flex-wrap: wrap; }
+.prio-need { border-color: var(--accent); color: var(--accent); }
+details.bought { background: var(--surface); border: 1px solid var(--line); border-radius: var(--r); }
+details.bought summary { padding: 12px 16px; cursor: pointer; font-weight: 600; color: var(--muted); }
+details.bought .row { opacity: 0.8; }
+.wish-total { display: flex; justify-content: space-between; font-size: 0.9rem; color: var(--muted); padding: 0 2px; }
+
+.onboard { background: var(--accent-soft); border: 1px solid var(--accent); border-radius: 14px; padding: 20px; display: grid; gap: 12px; }
+.onboard h2 { font-size: 1.3rem; }
+.onboard p { margin: 0; color: var(--muted); max-width: 60ch; }
+
+.settings { display: grid; gap: 14px; }
+.setting { background: var(--surface); border: 1px solid var(--line); border-radius: var(--r); padding: 16px; display: grid; gap: 8px; }
+.setting p { margin: 0; color: var(--muted); font-size: 0.9rem; max-width: 62ch; }
+.setting .field { max-width: 260px; }
+.danger { color: var(--bad); border-color: var(--bad); }
+
+@media (prefers-reduced-motion: no-preference) { .bar span { transition: width .4s ease; } }
+</style>
+
+<div class="app">
+  <header class="top">
+    <div class="brand">Pocket Ledger</div>
+    <div class="sync" id="sync" data-state="loading">Loading…</div>
+  </header>
+
+  <section class="summary" aria-label="Your money">
+    <div class="bal">
+      <div class="label">Money you have</div>
+      <div class="bal-row">
+        <div class="big" id="balance">—</div>
+        <button class="btn ghost small" data-act="edit-bal" id="editBalBtn">Update balance</button>
+      </div>
+      <form class="bal-form" id="balForm" hidden>
+        <input id="balInput" type="number" step="0.01" inputmode="decimal" aria-label="Current balance" required>
+        <button class="btn small" type="submit">Save balance</button>
+        <button class="btn ghost small" type="button" data-act="cancel-bal">Cancel</button>
+      </form>
+    </div>
+    <dl class="stats">
+      <div><dt>Spent in <span id="mName"></span></dt><dd id="statSpent">—</dd></div>
+      <div><dt>Budget left this month</dt><dd id="statLeft">—</dd></div>
+      <div><dt>Safe to spend</dt><dd id="statSafe">—</dd><small>Balance minus what's still set aside in budgets</small></div>
+      <div><dt>Wishlist total</dt><dd id="statWish">—</dd><small id="statWishN"></small></div>
+    </dl>
+  </section>
+
+  <section class="onboard" id="onboard" hidden>
+    <h2>Start with what you have</h2>
+    <p>Enter how much money you have right now. Everything you log after this adjusts it automatically.</p>
+    <form class="bal-form" id="startForm">
+      <input id="startBal" type="number" step="0.01" inputmode="decimal" placeholder="e.g. 850.00" aria-label="Starting balance" required>
+      <button class="btn" type="submit">Set balance</button>
+      <button class="btn ghost" type="button" data-act="sample">Try it with example numbers</button>
+    </form>
+  </section>
+
+  <nav class="tabs" role="tablist" aria-label="Sections">
+    <button class="tab" role="tab" data-act="tab" data-tab="spending" id="tab-btn-spending">Spending</button>
+    <button class="tab" role="tab" data-act="tab" data-tab="budgets" id="tab-btn-budgets">Budgets<span class="count" id="budCount"></span></button>
+    <button class="tab" role="tab" data-act="tab" data-tab="wishlist" id="tab-btn-wishlist">Wishlist<span class="count" id="wishCount"></span></button>
+    <button class="tab" role="tab" data-act="tab" data-tab="settings" id="tab-btn-settings">Settings</button>
+  </nav>
+
+  <section class="panel" id="tab-spending" role="tabpanel">
+    <form class="entry" id="txForm">
+      <div class="fields">
+        <div class="seg" role="radiogroup" aria-label="Money in or out">
+          <label><input type="radio" name="txType" id="txOut" value="out" checked><span>Spent</span></label>
+          <label><input type="radio" name="txType" id="txIn" value="in"><span>Received</span></label>
+        </div>
+      </div>
+      <div class="fields">
+        <label class="field"><span>Amount</span><input id="txAmount" type="number" step="0.01" min="0.01" inputmode="decimal" placeholder="0.00" required></label>
+        <label class="field"><span>Category</span><select id="txCat"></select></label>
+        <label class="field wide"><span>What for (optional)</span><input id="txNote" type="text" maxlength="120" placeholder="e.g. Lunch with Sam"></label>
+        <label class="field"><span>Date</span><input id="txDate" type="date" required></label>
+        <button class="btn" type="submit">Add</button>
+      </div>
+      <p class="err" id="txErr"></p>
+    </form>
+    <div class="monthbar">
+      <div><h2 id="txMonth"></h2><div class="meta num" id="txMeta"></div></div>
+      <div class="nav"><button class="btn ghost small" data-act="prev" aria-label="Previous month">‹</button><button class="btn ghost small" data-act="next" aria-label="Next month">›</button></div>
+    </div>
+    <div class="list" id="txList"></div>
+  </section>
+
+  <section class="panel" id="tab-budgets" role="tabpanel" hidden>
+    <form class="entry" id="budForm">
+      <h3>Add a monthly budget</h3>
+      <div class="fields">
+        <label class="field wide"><span>Category</span><input id="budName" type="text" maxlength="40" placeholder="e.g. Food" required></label>
+        <label class="field"><span>Monthly limit</span><input id="budLimit" type="number" step="0.01" min="0.01" inputmode="decimal" placeholder="0.00" required></label>
+        <button class="btn" type="submit">Add budget</button>
+      </div>
+      <p class="err" id="budErr"></p>
+    </form>
+    <div class="monthbar">
+      <div><h2 id="budMonth"></h2><div class="meta num" id="budMeta"></div></div>
+      <div class="nav"><button class="btn ghost small" data-act="prev" aria-label="Previous month">‹</button><button class="btn ghost small" data-act="next" aria-label="Next month">›</button></div>
+    </div>
+    <div class="list" id="budList"></div>
+  </section>
+
+  <section class="panel" id="tab-wishlist" role="tabpanel" hidden>
+    <form class="entry" id="wishForm">
+      <h3>Add something you want</h3>
+      <div class="fields">
+        <label class="field wide"><span>Item</span><input id="wishName" type="text" maxlength="80" placeholder="e.g. Noise-cancelling headphones" required></label>
+        <label class="field"><span>Price</span><input id="wishPrice" type="number" step="0.01" min="0.01" inputmode="decimal" placeholder="0.00" required></label>
+        <label class="field"><span>Priority</span><select id="wishPrio"><option value="need">Need</option><option value="want" selected>Want</option><option value="someday">Someday</option></select></label>
+        <label class="field wide"><span>Link (optional)</span><input id="wishUrl" type="url" placeholder="https://"></label>
+        <button class="btn" type="submit">Add to list</button>
+      </div>
+      <p class="err" id="wishErr"></p>
+    </form>
+    <div class="wish-total"><span id="wishSummary"></span></div>
+    <div class="list" id="wishList"></div>
+    <details class="bought" id="boughtWrap" hidden><summary id="boughtSum">Bought</summary><div id="boughtList"></div></details>
+  </section>
+
+  <section class="panel settings" id="tab-settings" role="tabpanel" hidden>
+    <div class="setting">
+      <h3>Currency</h3>
+      <label class="field"><span>Show amounts in</span>
+        <select id="currency">
+          <option value="GBP">£ British pound</option><option value="USD">$ US dollar</option><option value="EUR">€ Euro</option>
+          <option value="CAD">$ Canadian dollar</option><option value="AUD">$ Australian dollar</option><option value="NZD">$ New Zealand dollar</option>
+          <option value="INR">₹ Indian rupee</option><option value="ZAR">R South African rand</option><option value="NGN">₦ Nigerian naira</option>
+          <option value="AED">AED UAE dirham</option><option value="SAR">SAR Saudi riyal</option><option value="JPY">¥ Japanese yen</option>
+        </select>
+      </label>
+    </div>
+    <div class="setting">
+      <h3>Where your data lives</h3>
+      <p id="storeNote"></p>
+    </div>
+    <div class="setting">
+      <h3>Start over</h3>
+      <p>Deletes your balance, every transaction, budget and wishlist item. This can't be undone.</p>
+      <div><button class="btn ghost danger" data-act="clear" id="clearBtn">Delete everything</button></div>
+    </div>
+  </section>
+</div>
+
+<script>
+(() => {
+  const $ = (s) => document.querySelector(s);
+  const newId = () => Date.now().toString(36) + Math.random().toString(36).slice(2, 8);
+  const LS_KEY = 'pocket-ledger-v1';
+  const TAB_KEY = 'pocket-ledger-tab';
+  const PRIO = { need: 0, want: 1, someday: 2 };
+  const PRIO_LABEL = { need: 'Need', want: 'Want', someday: 'Someday' };
+  const IN_CATS = ['Pay', 'Gift', 'Refund', 'Other income'];
+
+  const blankMain = () => ({ currency: 'GBP', startBalance: 0, balanceSet: false, budgets: [], wishlist: [] });
+  let main = blankMain();
+  let txs = [];
+  let mode = 'local';
+  let cloud = null;
+  let ready = false;
+  let armedKey = null, armedTimer = null;
+
+  // ---------- dates & money ----------
+  const pad = (n) => String(n).padStart(2, '0');
+  const monthKey = (d) => d.getFullYear() + '-' + pad(d.getMonth() + 1);
+  const today = () => { const d = new Date(); return d.getFullYear() + '-' + pad(d.getMonth() + 1) + '-' + pad(d.getDate()); };
+  const curMonth = () => monthKey(new Date());
+  const shiftMonth = (key, n) => { const [y, m] = key.split('-').map(Number); return monthKey(new Date(y, m - 1 + n, 1)); };
+  const monthLabel = (key) => { const [y, m] = key.split('-').map(Number); return new Date(y, m - 1, 1).toLocaleDateString(undefined, { month: 'long', year: 'numeric' }); };
+  const monthName = (key) => { const [y, m] = key.split('-').map(Number); return new Date(y, m - 1, 1).toLocaleDateString(undefined, { month: 'long' }); };
+  const dayLabel = (ds) => { const [y, m, d] = ds.split('-').map(Number); return new Date(y, m - 1, d).toLocaleDateString(undefined, { weekday: 'short', day: 'numeric', month: 'short' }); };
+  let viewMonth = curMonth();
+
+  const fmts = {};
+  function money(c) {
+    const cur = main.currency || 'GBP';
+    if (!fmts[cur]) { try { fmts[cur] = new Intl.NumberFormat(undefined, { style: 'currency', currency: cur }); } catch (e) { fmts[cur] = new Intl.NumberFormat(undefined, { minimumFractionDigits: 2 }); } }
+    return fmts[cur].format((c || 0) / 100);
+  }
+  function toCents(v) { const n = parseFloat(String(v).trim()); return Number.isFinite(n) ? Math.round(n * 100) : NaN; }
+  const esc = (s) => String(s ?? '').replace(/[&<>"']/g, (ch) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[ch]));
+  const clone = (o) => JSON.parse(JSON.stringify(o));
+
+  // ---------- numbers ----------
+  function totals() {
+    let inc = 0, out = 0;
+    for (const t of txs) { if (t.type === 'in') inc += t.amount; else out += t.amount; }
+    return { balance: (main.startBalance || 0) + inc - out, inc, out };
+  }
+  function monthSpend(month) {
+    const byCat = new Map(); let out = 0, inc = 0;
+    for (const t of txs) {
+      if (!t.date || !t.date.startsWith(month)) continue;
+      if (t.type === 'in') { inc += t.amount; continue; }
+      out += t.amount; byCat.set(t.category, (byCat.get(t.category) || 0) + t.amount);
+    }
+    return { byCat, out, inc };
+  }
+  function budgetLeft(month) {
+    const { byCat } = monthSpend(month); let left = 0;
+    for (const b of main.budgets) left += Math.max(0, b.limit - (byCat.get(b.name) || 0));
+    return left;
+  }
+  const isEmpty = () => !main.balanceSet && !txs.length && !main.budgets.length && !main.wishlist.length;
+
+  // ---------- saving ----------
+  function setSync(state, text) {
+    const el = $('#sync'); el.dataset.state = state;
+    el.textContent = text || ({ ok: mode === 'cloud' ? 'Saved to your account' : 'Saved in this browser', saving: 'Saving…', loading: 'Loading…' }[state] || '');
+  }
+  function saveLocal() {
+    try { localStorage.setItem(LS_KEY, JSON.stringify({ main, txs })); setSync('ok'); }
+    catch (e) { setSync('error', "Couldn't save in this browser"); }
+  }
+  function loadLocal() {
+    try {
+      const raw = localStorage.getItem(LS_KEY);
+      if (raw) { const d = JSON.parse(raw); main = { ...blankMain(), ...(d.main || {}) }; txs = Array.isArray(d.txs) ? d.txs : []; }
+    } catch (e) {}
+  }
+  function onWriteErr(e) {
+    const code = e && e.code;
+    setSync('error', code === 'quota_exceeded' ? 'Storage is full. Delete old entries to keep saving.' : code === 'invalid_argument' ? "You can view this page but can't save changes" : "Couldn't save. Check your connection.");
+  }
+
+  let mainTimer = null, mainChain = Promise.resolve(), mainSeq = 0, savedSeq = 0;
+  function commitMain() {
+    render();
+    if (mode !== 'cloud') return saveLocal();
+    mainSeq++; setSync('saving');
+    clearTimeout(mainTimer);
+    mainTimer = setTimeout(() => {
+      const seq = mainSeq, body = clone(main);
+      mainChain = mainChain
+        .then(() => cloud.mainRef.set(body))
+        .then(() => { savedSeq = Math.max(savedSeq, seq); if (savedSeq === mainSeq) setSync('ok'); })
+        .catch((e) => { savedSeq = Math.max(savedSeq, seq); onWriteErr(e); });
+    }, 350);
+  }
+  function addTx(t) {
+    txs.push(t); render();
+    if (mode !== 'cloud') return saveLocal();
+    setSync('saving');
+    cloud.txCol.doc(t.id).set(t).then(() => setSync('ok')).catch(onWriteErr);
+  }
+  function delTx(id) {
+    txs = txs.filter((t) => t.id !== id); render();
+    if (mode !== 'cloud') return saveLocal();
+    cloud.txCol.doc(id).delete().then(() => setSync('ok')).catch(onWriteErr);
+  }
+
+  async function initCloud() {
+    const c = window.claude;
+    if (!c || typeof c.use !== 'function') return false;
+    try {
+      const [db, user] = await Promise.all([c.use('db'), c.use('user')]);
+      if (!db || !user) return false;
+      const uid = await user.id();
+      if (!uid) return false;
+      const mainRef = db.doc('data/users/' + uid + '/ledger');
+      cloud = { mainRef, txCol: mainRef.collection('tx') };
+      mode = 'cloud';
+      let gotMain = false, gotTx = false;
+      const check = () => { if (gotMain && gotTx && !ready) { ready = true; setSync('ok'); } render(); };
+      mainRef.onSnapshot((snap) => {
+        if (savedSeq < mainSeq) return; // a local edit is still on its way up
+        main = snap.exists ? { ...blankMain(), ...clone(snap.data()) } : blankMain();
+        gotMain = true; check();
+      }, () => setSync('error', "Couldn't load your data. Reload to try again."));
+      cloud.txCol.onSnapshot((snap) => {
+        txs = snap.docs.map((d) => ({ ...clone(d.data()), id: d.id }));
+        gotTx = true; check();
+      }, () => setSync('error', "Couldn't load your data. Reload to try again."));
+      return true;
+    } catch (e) { return false; }
+  }
+
+  // ---------- rendering ----------
+  function armBtn(key, idle, armedLabel, extra = '') {
+    const on = armedKey === key;
+    return `<button class="link-btn${on ? ' armed' : ''}" data-act="${key.split(':')[0]}" data-id="${esc(key.split(':')[1] || '')}" ${extra}>${on ? armedLabel : idle}</button>`;
+  }
+  function arm(key, action) {
+    if (armedKey === key) { armedKey = null; clearTimeout(armedTimer); action(); return; }
+    armedKey = key; clearTimeout(armedTimer);
+    armedTimer = setTimeout(() => { armedKey = null; render(); }, 3500);
+    render();
+  }
+
+  function render() {
+    const t = totals(), cm = curMonth();
+    const spentNow = monthSpend(cm).out, left = budgetLeft(cm), safe = t.balance - left;
+    const openWish = main.wishlist.filter((w) => !w.bought);
+    const wishTotal = openWish.reduce((s, w) => s + w.price, 0);
+
+    $('#balance').textContent = ready ? money(t.balance) : '—';
+    $('#balance').classList.toggle('neg', t.balance < 0);
+    $('#mName').textContent = monthName(cm);
+    $('#statSpent').textContent = money(spentNow);
+    $('#statLeft').textContent = main.budgets.length ? money(left) : 'No budgets yet';
+    $('#statSafe').textContent = money(safe);
+    $('#statSafe').classList.toggle('neg', safe < 0);
+    $('#statWish').textContent = money(wishTotal);
+    $('#statWishN').textContent = openWish.length === 1 ? '1 item' : openWish.length + ' items';
+    $('#budCount').textContent = main.budgets.length || '';
+    $('#wishCount').textContent = openWish.length || '';
+    $('#onboard').hidden = !(ready && isEmpty());
+
+    const curSel = $('#currency'); if (curSel.value !== main.currency) curSel.value = main.currency;
+    $('#storeNote').textContent = mode === 'cloud'
+      ? 'Saved privately to your Claude account. Only you can see it, and it follows you to any device where you open this page.'
+      : 'Saved in this browser only. Clearing your browser data will erase it, and it won\'t appear on other devices.';
+    $('#clearBtn').textContent = armedKey === 'clear' ? 'Click again to delete everything' : 'Delete everything';
+
+    renderCats(); renderTx(); renderBudgets(); renderWish(t.balance, safe);
+    const nextDisabled = viewMonth >= cm;
+    document.querySelectorAll('[data-act="next"]').forEach((b) => { b.disabled = nextDisabled; });
+  }
+
+  function renderCats() {
+    const sel = $('#txCat'), type = document.querySelector('input[name="txType"]:checked').value;
+    const opts = type === 'in' ? IN_CATS : [...main.budgets.map((b) => b.name), 'Wishlist', 'Other'];
+    const prev = sel.value, sig = opts.join('\u0001');
+    if (sel.dataset.sig !== sig) {
+      sel.innerHTML = opts.map((o) => `<option>${esc(o)}</option>`).join('');
+      sel.dataset.sig = sig;
+      if (opts.includes(prev)) sel.value = prev;
+    }
+  }
+
+  function renderTx() {
+    $('#txMonth').textContent = monthLabel(viewMonth);
+    const { out, inc } = monthSpend(viewMonth);
+    $('#txMeta').textContent = `In ${money(inc)} · Out ${money(out)}`;
+    const list = txs.filter((x) => x.date && x.date.startsWith(viewMonth))
+      .sort((a, b) => b.date.localeCompare(a.date) || (b.created || 0) - (a.created || 0));
+    if (!list.length) { $('#txList').innerHTML = `<p class="none">Nothing logged in ${esc(monthLabel(viewMonth))}. Add what you spend or receive above.</p>`; return; }
+    let html = '', lastDay = null;
+    for (const x of list) {
+      if (x.date !== lastDay) {
+        lastDay = x.date;
+        const dayOut = list.filter((y) => y.date === x.date && y.type === 'out').reduce((s, y) => s + y.amount, 0);
+        html += `<div class="day"><span>${esc(dayLabel(x.date))}</span><span class="num">${dayOut ? '−' + esc(money(dayOut)) : ''}</span></div>`;
+      }
+      html += `<div class="row"><div class="what"><span class="name">${esc(x.note || x.category)}</span>${x.note ? `<span class="chip">${esc(x.category)}</span>` : ''}</div>
+        <span class="amt ${x.type === 'in' ? 'in' : ''}">${x.type === 'in' ? '+' : '−'}${esc(money(x.amount))}</span>
+        ${armBtn('del-tx:' + x.id, 'Delete', 'Sure?', `aria-label="Delete ${esc(x.note || x.category)}"`)}</div>`;
+    }
+    $('#txList').innerHTML = html;
+  }
+
+  function renderBudgets() {
+    $('#budMonth').textContent = monthLabel(viewMonth);
+    const { byCat } = monthSpend(viewMonth);
+    const totalLimit = main.budgets.reduce((s, b) => s + b.limit, 0);
+    const totalSpent = main.budgets.reduce((s, b) => s + (byCat.get(b.name) || 0), 0);
+    $('#budMeta').textContent = main.budgets.length ? `${money(totalSpent)} of ${money(totalLimit)} used` : '';
+    if (!main.budgets.length) { $('#budList').innerHTML = '<p class="none">No budgets yet. Add one above, like Food at 300 a month.</p>'; return; }
+    let html = '';
+    for (const b of main.budgets) {
+      const spent = byCat.get(b.name) || 0, pct = b.limit ? spent / b.limit : 0;
+      const state = pct > 1 ? 'bad' : pct >= 0.8 ? 'warn' : 'good';
+      const status = pct > 1 ? `Over by ${money(spent - b.limit)}` : `${money(b.limit - spent)} left`;
+      html += `<div class="budget">
+        <div class="b-head"><span class="b-name">${esc(b.name)}</span><span class="pill ${state}">${esc(status)}</span></div>
+        <div class="bar" role="img" aria-label="${Math.round(pct * 100)}% used"><span class="${state}" style="width:${Math.min(100, pct * 100).toFixed(1)}%"></span></div>
+        <div class="b-foot"><span class="num">${esc(money(spent))} spent</span>
+          <span class="b-limit"><label for="lim-${esc(b.id)}">Limit</label><input id="lim-${esc(b.id)}" type="number" step="0.01" min="0.01" inputmode="decimal" value="${(b.limit / 100).toFixed(2)}" data-act="limit" data-id="${esc(b.id)}">
+          ${armBtn('del-bud:' + b.id, 'Remove', 'Sure?')}</span></div></div>`;
+    }
+    const names = new Set(main.budgets.map((b) => b.name));
+    let other = 0; const otherCats = [];
+    for (const [cat, amt] of byCat) if (!names.has(cat)) { other += amt; otherCats.push(cat); }
+    if (other) html += `<div class="row"><div class="what"><span class="name">Spending outside budgets</span><span class="chip">${esc(otherCats.join(', '))}</span></div><span class="amt">${esc(money(other))}</span></div>`;
+    $('#budList').innerHTML = html;
+  }
+
+  function renderWish(balance, safe) {
+    const open = main.wishlist.filter((w) => !w.bought).sort((a, b) => (PRIO[a.priority] ?? 1) - (PRIO[b.priority] ?? 1) || a.price - b.price);
+    const bought = main.wishlist.filter((w) => w.bought).sort((a, b) => (b.boughtOn || '').localeCompare(a.boughtOn || ''));
+    const total = open.reduce((s, w) => s + w.price, 0);
+    $('#wishSummary').textContent = open.length ? `${open.length} item${open.length === 1 ? '' : 's'} · ${money(total)} total · You can safely spend ${money(Math.max(0, safe))} right now` : '';
+    if (!open.length) $('#wishList').innerHTML = '<p class="none">Your wishlist is empty. Add things you\'d like to buy and see when you can afford them.</p>';
+    else $('#wishList').innerHTML = open.map((w) => {
+      let state, label;
+      if (w.price <= safe) { state = 'good'; label = 'Can afford'; }
+      else if (w.price <= balance) { state = 'warn'; label = 'Would eat into budgets'; }
+      else { state = 'bad'; label = `Need ${money(w.price - Math.max(0, balance))} more`; }
+      const pct = Math.min(100, Math.max(0, balance) / w.price * 100);
+      const safeUrl = /^https?:\/\//i.test(w.url || '') ? w.url : '';
+      const name = safeUrl ? `<a class="name" href="${esc(safeUrl)}" target="_blank" rel="noopener">${esc(w.name)}</a>` : `<span class="name">${esc(w.name)}</span>`;
+      return `<div class="wish">
+        <div class="b-head"><div class="what">${name}<span class="chip ${w.priority === 'need' ? 'prio-need' : ''}">${PRIO_LABEL[w.priority] || 'Want'}</span></div><span class="amt">${esc(money(w.price))}</span></div>
+        ${state === 'good' ? '' : `<div class="bar" role="img" aria-label="${Math.round(pct)}% of the price covered by your balance"><span class="${state}" style="width:${pct.toFixed(1)}%"></span></div>`}
+        <div class="b-foot"><span class="pill ${state}">${esc(label)}</span>
+          <span class="wish-actions"><button class="btn small" data-act="buy" data-id="${esc(w.id)}">I bought it</button>${armBtn('del-wish:' + w.id, 'Remove', 'Sure?')}</span></div></div>`;
+    }).join('');
+    $('#boughtWrap').hidden = !bought.length;
+    $('#boughtSum').textContent = `Bought (${bought.length})`;
+    $('#boughtList').innerHTML = bought.map((w) => `<div class="row"><div class="what"><span class="name">${esc(w.name)}</span>${w.boughtOn ? `<span class="chip">${esc(dayLabel(w.boughtOn))}</span>` : ''}</div>
+      <span class="amt">${esc(money(w.price))}</span><button class="link-btn" data-act="unbuy" data-id="${esc(w.id)}">Undo</button></div>`).join('');
+  }
+
+  // ---------- tabs ----------
+  function showTab(name) {
+    for (const t of ['spending', 'budgets', 'wishlist', 'settings']) {
+      $('#tab-' + t).hidden = t !== name;
+      $('#tab-btn-' + t).setAttribute('aria-selected', String(t === name));
+    }
+    try { localStorage.setItem(TAB_KEY, name); } catch (e) {}
+  }
+
+  // ---------- actions ----------
+  function setBalance(cents) {
+    let net = 0; for (const t of txs) net += t.type === 'in' ? t.amount : -t.amount;
+    main.startBalance = cents - net; main.balanceSet = true; commitMain();
+  }
+
+  function loadSample() {
+    const cm = curMonth(), d = new Date().getDate();
+    const day = (n) => cm + '-' + pad(Math.max(1, Math.min(d, n)));
+    main.budgets = [
+      { id: newId(), name: 'Food', limit: 30000 }, { id: newId(), name: 'Transport', limit: 8000 },
+      { id: newId(), name: 'Going out', limit: 12000 }, { id: newId(), name: 'Bills', limit: 45000 },
+    ];
+    main.wishlist = [
+      { id: newId(), name: 'Running shoes (example)', price: 9500, priority: 'need', url: '', bought: false, added: Date.now() },
+      { id: newId(), name: 'Wireless headphones (example)', price: 14900, priority: 'want', url: '', bought: false, added: Date.now() },
+      { id: newId(), name: 'New laptop (example)', price: 110000, priority: 'someday', url: '', bought: false, added: Date.now() },
+    ];
+    const sample = [
+      ['in', 165000, 'Pay', 'Monthly pay (example)', 1], ['out', 45000, 'Bills', 'Rent share (example)', 1],
+      ['out', 6240, 'Food', 'Weekly shop (example)', 3], ['out', 2800, 'Transport', 'Bus pass top-up (example)', 4],
+      ['out', 3850, 'Going out', 'Cinema and dinner (example)', 6], ['out', 5410, 'Food', 'Weekly shop (example)', 10],
+      ['out', 1299, 'Other', 'Phone case (example)', 12], ['out', 4600, 'Going out', 'Concert ticket (example)', 14],
+    ];
+    const made = sample.map(([type, amount, category, note, n], i) => ({ id: newId() + i, type, amount, category, note, date: day(n), created: Date.now() + i }));
+    let net = 0; for (const t of [...txs, ...made]) net += t.type === 'in' ? t.amount : -t.amount;
+    main.startBalance = 124000 - net; main.balanceSet = true;
+    viewMonth = cm;
+    commitMain();
+    made.forEach(addTx);
+  }
+
+  async function clearAll() {
+    const ids = txs.map((t) => t.id);
+    txs = []; main = { ...blankMain(), currency: main.currency };
+    commitMain();
+    if (mode === 'cloud') {
+      try { for (const id of ids) await cloud.txCol.doc(id).delete(); setSync('ok'); } catch (e) { onWriteErr(e); }
+    }
+  }
+
+  document.addEventListener('click', (e) => {
+    const el = e.target.closest('[data-act]'); if (!el) return;
+    const act = el.dataset.act, id = el.dataset.id;
+    if (act === 'tab') return showTab(el.dataset.tab);
+    if (act === 'prev') { viewMonth = shiftMonth(viewMonth, -1); return render(); }
+    if (act === 'next') { if (viewMonth < curMonth()) viewMonth = shiftMonth(viewMonth, 1); return render(); }
+    if (act === 'edit-bal') { $('#balForm').hidden = false; $('#editBalBtn').hidden = true; $('#balInput').value = (totals().balance / 100).toFixed(2); $('#balInput').focus(); return; }
+    if (act === 'cancel-bal') { $('#balForm').hidden = true; $('#editBalBtn').hidden = false; return; }
+    if (act === 'sample') return loadSample();
+    if (act === 'clear') return arm('clear', clearAll);
+    if (act === 'del-tx') return arm('del-tx:' + id, () => delTx(id));
+    if (act === 'del-bud') return arm('del-bud:' + id, () => { main.budgets = main.budgets.filter((b) => b.id !== id); commitMain(); });
+    if (act === 'del-wish') return arm('del-wish:' + id, () => { main.wishlist = main.wishlist.filter((w) => w.id !== id); commitMain(); });
+    if (act === 'buy') {
+      const w = main.wishlist.find((x) => x.id === id); if (!w) return;
+      const tx = { id: newId(), type: 'out', amount: w.price, category: 'Wishlist', note: w.name, date: today(), created: Date.now() };
+      w.bought = true; w.boughtOn = tx.date; w.txId = tx.id;
+      commitMain(); addTx(tx); return;
+    }
+    if (act === 'unbuy') {
+      const w = main.wishlist.find((x) => x.id === id); if (!w) return;
+      const txId = w.txId; w.bought = false; delete w.boughtOn; delete w.txId;
+      commitMain(); if (txId && txs.some((t) => t.id === txId)) delTx(txId); return;
+    }
+  });
+
+  document.addEventListener('change', (e) => {
+    const el = e.target;
+    if (el.name === 'txType') return renderCats();
+    if (el.id === 'currency') { main.currency = el.value; return commitMain(); }
+    if (el.dataset.act === 'limit') {
+      const b = main.budgets.find((x) => x.id === el.dataset.id), v = toCents(el.value);
+      if (b && v > 0 && v !== b.limit) { b.limit = v; commitMain(); } else if (b) el.value = (b.limit / 100).toFixed(2);
+    }
+  });
+
+  $('#balForm').addEventListener('submit', (e) => {
+    e.preventDefault(); const v = toCents($('#balInput').value); if (!Number.isFinite(v)) return;
+    setBalance(v); $('#balForm').hidden = true; $('#editBalBtn').hidden = false;
+  });
+  $('#startForm').addEventListener('submit', (e) => {
+    e.preventDefault(); const v = toCents($('#startBal').value); if (!Number.isFinite(v)) return; setBalance(v);
+  });
+  $('#txForm').addEventListener('submit', (e) => {
+    e.preventDefault();
+    const amount = toCents($('#txAmount').value), date = $('#txDate').value;
+    if (!(amount > 0)) { $('#txErr').textContent = 'Enter an amount above zero.'; return; }
+    if (!/^\d{4}-\d{2}-\d{2}$/.test(date)) { $('#txErr').textContent = 'Pick a date.'; return; }
+    $('#txErr').textContent = '';
+    const type = document.querySelector('input[name="txType"]:checked').value;
+    addTx({ id: newId(), type, amount, category: $('#txCat').value || 'Other', note: $('#txNote').value.trim(), date, created: Date.now() });
+    if (!main.balanceSet) { main.balanceSet = true; commitMain(); }
+    viewMonth = date.slice(0, 7); render();
+    $('#txAmount').value = ''; $('#txNote').value = ''; $('#txAmount').focus();
+  });
+  $('#budForm').addEventListener('submit', (e) => {
+    e.preventDefault();
+    const name = $('#budName').value.trim(), limit = toCents($('#budLimit').value);
+    if (!name) { $('#budErr').textContent = 'Give the budget a name.'; return; }
+    if (main.budgets.some((b) => b.name.toLowerCase() === name.toLowerCase())) { $('#budErr').textContent = `You already have a budget called ${name}.`; return; }
+    if (!(limit > 0)) { $('#budErr').textContent = 'Enter a monthly limit above zero.'; return; }
+    $('#budErr').textContent = '';
+    main.budgets.push({ id: newId(), name, limit }); commitMain();
+    $('#budName').value = ''; $('#budLimit').value = ''; $('#budName').focus();
+  });
+  $('#wishForm').addEventListener('submit', (e) => {
+    e.preventDefault();
+    const name = $('#wishName').value.trim(), price = toCents($('#wishPrice').value);
+    let url = $('#wishUrl').value.trim();
+    if (!name) { $('#wishErr').textContent = 'Name the item.'; return; }
+    if (!(price > 0)) { $('#wishErr').textContent = 'Enter a price above zero.'; return; }
+    if (url && !/^https?:\/\//i.test(url)) url = 'https://' + url;
+    $('#wishErr').textContent = '';
+    main.wishlist.push({ id: newId(), name, price, priority: $('#wishPrio').value, url, bought: false, added: Date.now() });
+    commitMain();
+    $('#wishName').value = ''; $('#wishPrice').value = ''; $('#wishUrl').value = ''; $('#wishName').focus();
+  });
+
+  // ---------- start ----------
+  $('#txDate').value = today();
+  let tab = 'spending';
+  try { tab = localStorage.getItem(TAB_KEY) || tab; } catch (e) {}
+  const hash = location.hash.slice(1);
+  if (['spending', 'budgets', 'wishlist', 'settings'].includes(hash)) tab = hash;
+  showTab(tab);
+  render();
+
+  (window.claude ? initCloud() : Promise.resolve(false)).then((ok) => {
+    if (ok) return;
+    mode = 'local'; loadLocal(); ready = true; setSync('ok'); render();
+  });
+})();
+</script>

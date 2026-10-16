@@ -1,0 +1,10 @@
+# Pocket Ledger
+
+A single-file money tracker: your balance, monthly budgets, spending log and a wishlist that tells you what you can afford.
+
+Open `index.html` in a browser. Data is saved in that browser (localStorage). When published as a Claude artifact it saves privately to your Claude account instead.
+
+- **Balance** – set what you have now; every logged transaction adjusts it.
+- **Safe to spend** – balance minus what's still left in this month's budgets.
+- **Budgets** – monthly limits per category with progress bars.
+- **Wishlist** – items with price and priority, marked as affordable / would eat into budgets / need X more. "I bought it" logs the expense.
