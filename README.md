@@ -7,4 +7,6 @@ Open `index.html` in a browser. Data is saved in that browser (localStorage). Wh
 - **Balance** – set what you have now; every logged transaction adjusts it.
 - **Safe to spend** – balance minus what's still left in this month's budgets.
 - **Budgets** – monthly limits per category with progress bars.
+- **Savings goals** – target, optional deadline, and how much to put aside each month to hit it. Saved money is excluded from "safe to spend".
+- **Pay yourself first** – after logging income, suggests moving a set % (default 20%) into a goal.
 - **Wishlist** – items with price and priority, marked as affordable / would eat into budgets / need X more. "I bought it" logs the expense.

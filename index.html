@@ -70,7 +70,7 @@ button, input, select { font: inherit; color: inherit; }
 .tab[aria-selected="true"] { color: var(--ink); border-bottom-color: var(--accent); }
 .tab .count { font-family: var(--f-num); font-size: 0.75rem; color: var(--muted); margin-left: 4px; }
 .panel { display: grid; gap: 16px; }
-@media (max-width: 440px) { .tab { padding: 10px 9px; font-size: 0.9rem; } }
+@media (max-width: 440px) { .tab { padding: 10px 7px; font-size: 0.85rem; } }
 
 /* Forms */
 .entry { background: var(--surface); border: 1px solid var(--line); border-radius: var(--r); padding: 16px; display: grid; gap: 12px; }
@@ -131,8 +131,14 @@ input:focus, select:focus { border-color: var(--accent); }
 .b-limit { display: flex; align-items: center; gap: 6px; }
 .b-limit input { width: 7.5rem; padding: 5px 8px; font-family: var(--f-num); font-size: 0.85rem; }
 
-.wish { padding: 14px 16px; border-top: 1px solid var(--line); display: grid; gap: 8px; }
-.list > .wish:first-child { border-top: 0; }
+.wish, .goal { padding: 14px 16px; border-top: 1px solid var(--line); display: grid; gap: 8px; }
+.list > .wish:first-child, .list > .goal:first-child { border-top: 0; }
+.wish .what, .goal .what { flex: 1 1 12rem; }
+.goal-move { display: flex; gap: 6px; flex-wrap: wrap; align-items: center; }
+.goal-move input { width: 8rem; padding: 5px 8px; font-family: var(--f-num); font-size: 0.85rem; }
+.amt .of { color: var(--muted); font-weight: 400; }
+.bar .accent { background: var(--accent); }
+.pf-text { margin: 0; }
 .wish .b-head { align-items: flex-start; }
 .wish-actions { display: flex; gap: 4px; align-items: center; flex-wrap: wrap; }
 .prio-need { border-color: var(--accent); color: var(--accent); }
@@ -176,8 +182,8 @@ details.bought .row { opacity: 0.8; }
     <dl class="stats">
       <div><dt>Spent in <span id="mName"></span></dt><dd id="statSpent">—</dd></div>
       <div><dt>Budget left this month</dt><dd id="statLeft">—</dd></div>
-      <div><dt>Safe to spend</dt><dd id="statSafe">—</dd><small>Balance minus what's still set aside in budgets</small></div>
-      <div><dt>Wishlist total</dt><dd id="statWish">—</dd><small id="statWishN"></small></div>
+      <div><dt>In savings</dt><dd id="statSaved">—</dd><small id="statSavedN"></small></div>
+      <div><dt>Safe to spend</dt><dd id="statSafe">—</dd><small>What's left after savings and this month's budgets</small></div>
     </dl>
   </section>
 
@@ -191,8 +197,11 @@ details.bought .row { opacity: 0.8; }
     </form>
   </section>
 
+  <section class="onboard" id="payFirst" hidden aria-live="polite"></section>
+
   <nav class="tabs" role="tablist" aria-label="Sections">
     <button class="tab" role="tab" data-act="tab" data-tab="spending" id="tab-btn-spending">Spending</button>
+    <button class="tab" role="tab" data-act="tab" data-tab="savings" id="tab-btn-savings">Savings<span class="count" id="goalCount"></span></button>
     <button class="tab" role="tab" data-act="tab" data-tab="budgets" id="tab-btn-budgets">Budgets<span class="count" id="budCount"></span></button>
     <button class="tab" role="tab" data-act="tab" data-tab="wishlist" id="tab-btn-wishlist">Wishlist<span class="count" id="wishCount"></span></button>
     <button class="tab" role="tab" data-act="tab" data-tab="settings" id="tab-btn-settings">Settings</button>
@@ -220,6 +229,22 @@ details.bought .row { opacity: 0.8; }
       <div class="nav"><button class="btn ghost small" data-act="prev" aria-label="Previous month">‹</button><button class="btn ghost small" data-act="next" aria-label="Next month">›</button></div>
     </div>
     <div class="list" id="txList"></div>
+  </section>
+
+  <section class="panel" id="tab-savings" role="tabpanel" hidden>
+    <form class="entry" id="goalForm">
+      <h3>Add a savings goal</h3>
+      <div class="fields">
+        <label class="field wide"><span>Saving for</span><input id="goalName" type="text" maxlength="60" placeholder="e.g. Emergency fund" required></label>
+        <label class="field"><span>Target</span><input id="goalTarget" type="number" step="0.01" min="0.01" inputmode="decimal" placeholder="0.00" required></label>
+        <label class="field"><span>By (optional)</span><input id="goalBy" type="month" placeholder="YYYY-MM"></label>
+        <button class="btn" type="submit">Add goal</button>
+      </div>
+      <p class="err" id="goalErr"></p>
+    </form>
+    <div class="wish-total"><span id="goalSummary"></span></div>
+    <div class="list" id="goalList"></div>
+    <details class="bought" id="goalDoneWrap" hidden><summary id="goalDoneSum">Finished</summary><div id="goalDoneList"></div></details>
   </section>
 
   <section class="panel" id="tab-budgets" role="tabpanel" hidden>
@@ -269,6 +294,11 @@ details.bought .row { opacity: 0.8; }
       </label>
     </div>
     <div class="setting">
+      <h3>Pay yourself first</h3>
+      <p>When you log money you receive, the app suggests putting this share into savings before you spend any of it. Set it to 0 to turn the suggestion off.</p>
+      <label class="field"><span>Percent to save</span><input id="savePct" type="number" min="0" max="90" step="1" inputmode="numeric"></label>
+    </div>
+    <div class="setting">
       <h3>Where your data lives</h3>
       <p id="storeNote"></p>
     </div>
@@ -290,13 +320,15 @@ details.bought .row { opacity: 0.8; }
   const PRIO_LABEL = { need: 'Need', want: 'Want', someday: 'Someday' };
   const IN_CATS = ['Pay', 'Gift', 'Refund', 'Other income'];
 
-  const blankMain = () => ({ currency: 'SAR', startBalance: 0, balanceSet: false, budgets: [], wishlist: [] });
+  const blankMain = () => ({ currency: 'SAR', startBalance: 0, balanceSet: false, budgets: [], wishlist: [], goals: [], savePct: 20 });
   let main = blankMain();
   let txs = [];
   let mode = 'local';
   let cloud = null;
   let ready = false;
   let armedKey = null, armedTimer = null;
+  let pendingSave = null;
+  const goalErrs = {};
 
   // ---------- dates & money ----------
   const pad = (n) => String(n).padStart(2, '0');
@@ -339,7 +371,10 @@ details.bought .row { opacity: 0.8; }
     for (const b of main.budgets) left += Math.max(0, b.limit - (byCat.get(b.name) || 0));
     return left;
   }
-  const isEmpty = () => !main.balanceSet && !txs.length && !main.budgets.length && !main.wishlist.length;
+  const isEmpty = () => !main.balanceSet && !txs.length && !main.budgets.length && !main.wishlist.length && !main.goals.length;
+  const savedTotal = () => main.goals.reduce((s, g) => s + (g.done ? 0 : g.saved || 0), 0);
+  const freeMoney = () => totals().balance - savedTotal();
+  function monthsLeft(ym) { const [y, m] = ym.split('-').map(Number), n = new Date(); return (y - n.getFullYear()) * 12 + (m - (n.getMonth() + 1)) + 1; }
 
   // ---------- saving ----------
   function setSync(state, text) {
@@ -428,9 +463,10 @@ details.bought .row { opacity: 0.8; }
 
   function render() {
     const t = totals(), cm = curMonth();
-    const spentNow = monthSpend(cm).out, left = budgetLeft(cm), safe = t.balance - left;
+    const saved = savedTotal(), free = t.balance - saved;
+    const spentNow = monthSpend(cm).out, left = budgetLeft(cm), safe = free - left;
     const openWish = main.wishlist.filter((w) => !w.bought);
-    const wishTotal = openWish.reduce((s, w) => s + w.price, 0);
+    const openGoals = main.goals.filter((g) => !g.done);
 
     $('#balance').textContent = ready ? money(t.balance) : '—';
     $('#balance').classList.toggle('neg', t.balance < 0);
@@ -439,19 +475,21 @@ details.bought .row { opacity: 0.8; }
     $('#statLeft').textContent = main.budgets.length ? money(left) : 'No budgets yet';
     $('#statSafe').textContent = money(safe);
     $('#statSafe').classList.toggle('neg', safe < 0);
-    $('#statWish').textContent = money(wishTotal);
-    $('#statWishN').textContent = openWish.length === 1 ? '1 item' : openWish.length + ' items';
+    $('#statSaved').textContent = money(saved);
+    $('#statSavedN').textContent = openGoals.length === 1 ? 'in 1 goal' : `in ${openGoals.length} goals`;
+    $('#goalCount').textContent = openGoals.length || '';
     $('#budCount').textContent = main.budgets.length || '';
     $('#wishCount').textContent = openWish.length || '';
     $('#onboard').hidden = !(ready && isEmpty());
 
     const curSel = $('#currency'); if (curSel.value !== main.currency) curSel.value = main.currency;
+    const sp = $('#savePct'); if (document.activeElement !== sp) sp.value = main.savePct ?? 20;
     $('#storeNote').textContent = mode === 'cloud'
       ? 'Saved privately to your Claude account. Only you can see it, and it follows you to any device where you open this page.'
       : 'Saved in this browser only. Clearing your browser data will erase it, and it won\'t appear on other devices.';
     $('#clearBtn').textContent = armedKey === 'clear' ? 'Click again to delete everything' : 'Delete everything';
 
-    renderCats(); renderTx(); renderBudgets(); renderWish(t.balance, safe);
+    renderCats(); renderTx(); renderBudgets(); renderWish(free, safe); renderGoals(free); renderPayFirst();
     const nextDisabled = viewMonth >= cm;
     document.querySelectorAll('[data-act="next"]').forEach((b) => { b.disabled = nextDisabled; });
   }
@@ -514,7 +552,7 @@ details.bought .row { opacity: 0.8; }
     $('#budList').innerHTML = html;
   }
 
-  function renderWish(balance, safe) {
+  function renderWish(free, safe) {
     const open = main.wishlist.filter((w) => !w.bought).sort((a, b) => (PRIO[a.priority] ?? 1) - (PRIO[b.priority] ?? 1) || a.price - b.price);
     const bought = main.wishlist.filter((w) => w.bought).sort((a, b) => (b.boughtOn || '').localeCompare(a.boughtOn || ''));
     const total = open.reduce((s, w) => s + w.price, 0);
@@ -522,17 +560,19 @@ details.bought .row { opacity: 0.8; }
     if (!open.length) $('#wishList').innerHTML = '<p class="none">Your wishlist is empty. Add things you\'d like to buy and see when you can afford them.</p>';
     else $('#wishList').innerHTML = open.map((w) => {
       let state, label;
-      if (w.price <= safe) { state = 'good'; label = 'Can afford'; }
-      else if (w.price <= balance) { state = 'warn'; label = 'Would eat into budgets'; }
-      else { state = 'bad'; label = `Need ${money(w.price - Math.max(0, balance))} more`; }
-      const pct = Math.min(100, Math.max(0, balance) / w.price * 100);
+      const linked = main.goals.find((g) => g.wishId === w.id && !g.done);
+      const extra = linked ? linked.saved : 0, avail = free + extra;
+      if (w.price <= safe + extra) { state = 'good'; label = 'Can afford'; }
+      else if (w.price <= avail) { state = 'warn'; label = 'Would eat into budgets'; }
+      else { state = 'bad'; label = `Need ${money(w.price - Math.max(0, avail))} more`; }
+      const pct = Math.min(100, Math.max(0, avail) / w.price * 100);
       const safeUrl = /^https?:\/\//i.test(w.url || '') ? w.url : '';
       const name = safeUrl ? `<a class="name" href="${esc(safeUrl)}" target="_blank" rel="noopener">${esc(w.name)}</a>` : `<span class="name">${esc(w.name)}</span>`;
       return `<div class="wish">
         <div class="b-head"><div class="what">${name}<span class="chip ${w.priority === 'need' ? 'prio-need' : ''}">${PRIO_LABEL[w.priority] || 'Want'}</span></div><span class="amt">${esc(money(w.price))}</span></div>
         ${state === 'good' ? '' : `<div class="bar" role="img" aria-label="${Math.round(pct)}% of the price covered by your balance"><span class="${state}" style="width:${pct.toFixed(1)}%"></span></div>`}
         <div class="b-foot"><span class="pill ${state}">${esc(label)}</span>
-          <span class="wish-actions"><button class="btn small" data-act="buy" data-id="${esc(w.id)}">I bought it</button>${armBtn('del-wish:' + w.id, 'Remove', 'Sure?')}</span></div></div>`;
+          <span class="wish-actions">${linked ? `<span class="chip">Saving · ${Math.min(100, Math.round(linked.saved / linked.target * 100))}%</span>` : state === 'good' ? '' : `<button class="btn ghost small" data-act="save-for" data-id="${esc(w.id)}">Save for it</button>`}<button class="btn small" data-act="buy" data-id="${esc(w.id)}">I bought it</button>${armBtn('del-wish:' + w.id, 'Remove', 'Sure?')}</span></div></div>`;
     }).join('');
     $('#boughtWrap').hidden = !bought.length;
     $('#boughtSum').textContent = `Bought (${bought.length})`;
@@ -540,9 +580,84 @@ details.bought .row { opacity: 0.8; }
       <span class="amt">${esc(money(w.price))}</span><button class="link-btn" data-act="unbuy" data-id="${esc(w.id)}">Undo</button></div>`).join('');
   }
 
+  function renderGoals(free) {
+    const open = main.goals.filter((g) => !g.done), done = main.goals.filter((g) => g.done);
+    $('#goalSummary').textContent = open.length ? `${money(savedTotal())} saved · ${money(Math.max(0, free))} not set aside yet` : '';
+    const cm = curMonth();
+    if (!open.length) $('#goalList').innerHTML = '<p class="none">No savings goals yet. Add one above, like an emergency fund or a trip.</p>';
+    else $('#goalList').innerHTML = open.map((g) => {
+      const pct = g.target ? Math.min(1, g.saved / g.target) : 0, reached = g.saved >= g.target;
+      const leftAmt = Math.max(0, g.target - g.saved), ml = g.deadline ? monthsLeft(g.deadline) : null;
+      let pace, pill;
+      if (reached) { pace = 'You hit your target'; pill = '<span class="pill good">Reached</span>'; }
+      else if (ml === null) { pace = `${money(leftAmt)} to go`; pill = `<span class="chip">${Math.round(pct * 100)}%</span>`; }
+      else if (ml <= 0) { pace = `Deadline passed · ${money(leftAmt)} to go`; pill = '<span class="pill bad">Overdue</span>'; }
+      else { pace = `Put aside ${money(Math.ceil(leftAmt / ml))} a month to reach it by ${monthLabel(g.deadline)}`; pill = `<span class="chip">${Math.round(pct * 100)}%</span>`; }
+      const thisMonth = (g.log || []).filter((l) => l.d.startsWith(cm)).reduce((s, l) => s + l.a, 0);
+      const id = esc(g.id);
+      return `<div class="goal">
+        <div class="b-head"><div class="what"><span class="name">${esc(g.name)}</span>${g.wishId ? '<span class="chip">Wishlist</span>' : ''}${pill}</div><span class="amt">${esc(money(g.saved))} <span class="of">of ${esc(money(g.target))}</span></span></div>
+        <div class="bar" role="img" aria-label="${Math.round(pct * 100)}% saved"><span class="${reached ? 'good' : 'accent'}" style="width:${(pct * 100).toFixed(1)}%"></span></div>
+        <div class="b-foot"><span>${esc(pace)}${thisMonth ? ` · ${thisMonth > 0 ? '+' : '−'}${esc(money(Math.abs(thisMonth)))} this month` : ''}</span></div>
+        <div class="goal-move">
+          ${reached ? `<button class="btn small" data-act="goal-spend" data-id="${id}">${g.wishId ? 'Buy it' : 'Spend it'}</button>` : ''}
+          <input id="gamt-${id}" type="number" step="0.01" min="0.01" inputmode="decimal" placeholder="Amount" aria-label="Amount for ${esc(g.name)}">
+          <button class="btn small" data-act="goal-add" data-id="${id}">Put in</button>
+          <button class="btn ghost small" data-act="goal-take" data-id="${id}">Take out</button>
+          ${armBtn('del-goal:' + g.id, 'Remove', 'Sure?')}
+        </div>
+        <p class="err">${esc(goalErrs[g.id] || '')}</p></div>`;
+    }).join('');
+    $('#goalDoneWrap').hidden = !done.length;
+    $('#goalDoneSum').textContent = `Finished (${done.length})`;
+    $('#goalDoneList').innerHTML = done.map((g) => `<div class="row"><div class="what"><span class="name">${esc(g.name)}</span>${g.doneOn ? `<span class="chip">${esc(dayLabel(g.doneOn))}</span>` : ''}</div>
+      <span class="amt">${esc(money(g.target))}</span>${armBtn('del-goal:' + g.id, 'Remove', 'Sure?')}</div>`).join('');
+  }
+
+  function renderPayFirst() {
+    const el = $('#payFirst');
+    if (!pendingSave) { el.hidden = true; el.dataset.sig = ''; return; }
+    const open = main.goals.filter((g) => !g.done && g.saved < g.target);
+    const sig = pendingSave.key + '|' + open.map((g) => g.id + ':' + g.name).join(',') + '|' + main.currency;
+    el.hidden = false;
+    if (el.dataset.sig === sig) return;
+    el.dataset.sig = sig;
+    const intro = `<p class="pf-text"><strong>Pay yourself first.</strong> You received ${esc(money(pendingSave.from))}. Put ${main.savePct}% aside now, before any of it gets spent.</p>`;
+    el.innerHTML = open.length ? `${intro}
+      <div class="fields">
+        <label class="field"><span>Amount</span><input id="pfAmt" type="number" step="0.01" min="0.01" inputmode="decimal" value="${(pendingSave.amount / 100).toFixed(2)}"></label>
+        <label class="field wide"><span>Into</span><select id="pfGoal">${open.map((g) => `<option value="${esc(g.id)}">${esc(g.name)}</option>`).join('')}</select></label>
+        <button class="btn" data-act="pf-go">Put it aside</button><button class="btn ghost" data-act="pf-skip">Not now</button>
+      </div><p class="err" id="pfErr"></p>`
+      : `${intro}<p class="pf-text">You don't have a savings goal to put it in yet.</p>
+      <div class="fields"><button class="btn" data-act="pf-new">Create a goal</button><button class="btn ghost" data-act="pf-skip">Not now</button></div>`;
+  }
+
+  function moveToGoal(id, amt) {
+    const g = main.goals.find((x) => x.id === id);
+    if (!g) return 'Pick a goal.';
+    if (!Number.isFinite(amt) || amt === 0) return 'Enter an amount above zero.';
+    if (amt > 0) {
+      const free = freeMoney();
+      if (amt > free) return free > 0 ? `You only have ${money(free)} that isn't already saved.` : 'All your money is already in savings goals.';
+    } else if (-amt > g.saved) return `Only ${money(g.saved)} is in this goal.`;
+    g.saved += amt;
+    g.log = (g.log || []).concat({ d: today(), a: amt }).slice(-100);
+    return null;
+  }
+
+  function buyWish(id) {
+    const w = main.wishlist.find((x) => x.id === id); if (!w) return;
+    const tx = { id: newId(), type: 'out', amount: w.price, category: 'Wishlist', note: w.name, date: today(), created: Date.now() };
+    w.bought = true; w.boughtOn = tx.date; w.txId = tx.id;
+    const g = main.goals.find((x) => x.wishId === w.id && !x.done);
+    if (g) { w.goalId = g.id; w.goalSaved = g.saved; g.done = true; g.doneOn = tx.date; g.saved = 0; }
+    commitMain(); addTx(tx);
+  }
+
   // ---------- tabs ----------
   function showTab(name) {
-    for (const t of ['spending', 'budgets', 'wishlist', 'settings']) {
+    for (const t of ['spending', 'savings', 'budgets', 'wishlist', 'settings']) {
       $('#tab-' + t).hidden = t !== name;
       $('#tab-btn-' + t).setAttribute('aria-selected', String(t === name));
     }
@@ -575,7 +690,11 @@ details.bought .row { opacity: 0.8; }
     ];
     const made = sample.map(([type, amount, category, note, n], i) => ({ id: newId() + i, type, amount, category, note, date: day(n), created: Date.now() + i }));
     let net = 0; for (const t of [...txs, ...made]) net += t.type === 'in' ? t.amount : -t.amount;
-    main.startBalance = 500000 - net; main.balanceSet = true;
+    main.goals = [
+      { id: newId(), name: 'Emergency fund (example)', target: 1000000, deadline: shiftMonth(cm, 12), saved: 250000, log: [{ d: day(1), a: 160000 }], created: Date.now() },
+      { id: newId(), name: 'Summer trip (example)', target: 600000, deadline: shiftMonth(cm, 8), saved: 120000, log: [], created: Date.now() },
+    ];
+    main.startBalance = 800000 - net; main.balanceSet = true;
     viewMonth = cm;
     commitMain();
     made.forEach(addTx);
@@ -583,7 +702,7 @@ details.bought .row { opacity: 0.8; }
 
   async function clearAll() {
     const ids = txs.map((t) => t.id);
-    txs = []; main = { ...blankMain(), currency: main.currency, currencyChosen: main.currencyChosen };
+    txs = []; main = { ...blankMain(), currency: main.currency, currencyChosen: main.currencyChosen, savePct: main.savePct };
     commitMain();
     if (mode === 'cloud') {
       try { for (const id of ids) await cloud.txCol.doc(id).delete(); setSync('ok'); } catch (e) { onWriteErr(e); }
@@ -603,15 +722,38 @@ details.bought .row { opacity: 0.8; }
     if (act === 'del-tx') return arm('del-tx:' + id, () => delTx(id));
     if (act === 'del-bud') return arm('del-bud:' + id, () => { main.budgets = main.budgets.filter((b) => b.id !== id); commitMain(); });
     if (act === 'del-wish') return arm('del-wish:' + id, () => { main.wishlist = main.wishlist.filter((w) => w.id !== id); commitMain(); });
-    if (act === 'buy') {
+    if (act === 'buy') return buyWish(id);
+    if (act === 'save-for') {
       const w = main.wishlist.find((x) => x.id === id); if (!w) return;
-      const tx = { id: newId(), type: 'out', amount: w.price, category: 'Wishlist', note: w.name, date: today(), created: Date.now() };
-      w.bought = true; w.boughtOn = tx.date; w.txId = tx.id;
+      main.goals.push({ id: newId(), name: w.name, target: w.price, deadline: '', saved: 0, log: [], wishId: w.id, created: Date.now() });
+      commitMain(); return showTab('savings');
+    }
+    if (act === 'goal-add' || act === 'goal-take') {
+      const v = toCents($('#gamt-' + id).value);
+      const err = moveToGoal(id, act === 'goal-add' ? v : -v);
+      goalErrs[id] = err || '';
+      return err ? render() : commitMain();
+    }
+    if (act === 'goal-spend') {
+      const g = main.goals.find((x) => x.id === id); if (!g) return;
+      const w = g.wishId && main.wishlist.find((x) => x.id === g.wishId && !x.bought);
+      if (w) return buyWish(w.id);
+      const tx = { id: newId(), type: 'out', amount: g.saved, category: 'Savings', note: g.name, date: today(), created: Date.now() };
+      g.done = true; g.doneOn = tx.date; g.saved = 0;
       commitMain(); addTx(tx); return;
+    }
+    if (act === 'del-goal') return arm('del-goal:' + id, () => { main.goals = main.goals.filter((g) => g.id !== id); commitMain(); });
+    if (act === 'pf-skip') { pendingSave = null; return render(); }
+    if (act === 'pf-new') { showTab('savings'); $('#goalName').focus(); return; }
+    if (act === 'pf-go') {
+      const err = moveToGoal($('#pfGoal').value, toCents($('#pfAmt').value));
+      if (err) { $('#pfErr').textContent = err; return; }
+      pendingSave = null; return commitMain();
     }
     if (act === 'unbuy') {
       const w = main.wishlist.find((x) => x.id === id); if (!w) return;
       const txId = w.txId; w.bought = false; delete w.boughtOn; delete w.txId;
+      if (w.goalId) { const g = main.goals.find((x) => x.id === w.goalId); if (g) { g.done = false; g.saved = w.goalSaved || 0; delete g.doneOn; } delete w.goalId; delete w.goalSaved; }
       commitMain(); if (txId && txs.some((t) => t.id === txId)) delTx(txId); return;
     }
   });
@@ -619,6 +761,7 @@ details.bought .row { opacity: 0.8; }
   document.addEventListener('change', (e) => {
     const el = e.target;
     if (el.name === 'txType') return renderCats();
+    if (el.id === 'savePct') { main.savePct = Math.max(0, Math.min(90, Math.round(Number(el.value) || 0))); return commitMain(); }
     if (el.id === 'currency') { main.currency = el.value; main.currencyChosen = true; return commitMain(); }
     if (el.dataset.act === 'limit') {
       const b = main.budgets.find((x) => x.id === el.dataset.id), v = toCents(el.value);
@@ -640,7 +783,9 @@ details.bought .row { opacity: 0.8; }
     if (!/^\d{4}-\d{2}-\d{2}$/.test(date)) { $('#txErr').textContent = 'Pick a date.'; return; }
     $('#txErr').textContent = '';
     const type = document.querySelector('input[name="txType"]:checked').value;
-    addTx({ id: newId(), type, amount, category: $('#txCat').value || 'Other', note: $('#txNote').value.trim(), date, created: Date.now() });
+    const txId = newId();
+    addTx({ id: txId, type, amount, category: $('#txCat').value || 'Other', note: $('#txNote').value.trim(), date, created: Date.now() });
+    if (type === 'in' && main.savePct > 0) pendingSave = { key: txId, from: amount, amount: Math.round(amount * main.savePct / 100) };
     if (!main.balanceSet) { main.balanceSet = true; commitMain(); }
     viewMonth = date.slice(0, 7); render();
     $('#txAmount').value = ''; $('#txNote').value = ''; $('#txAmount').focus();
@@ -654,6 +799,18 @@ details.bought .row { opacity: 0.8; }
     $('#budErr').textContent = '';
     main.budgets.push({ id: newId(), name, limit }); commitMain();
     $('#budName').value = ''; $('#budLimit').value = ''; $('#budName').focus();
+  });
+  $('#goalForm').addEventListener('submit', (e) => {
+    e.preventDefault();
+    const name = $('#goalName').value.trim(), target = toCents($('#goalTarget').value), by = $('#goalBy').value.trim();
+    if (!name) { $('#goalErr').textContent = 'Name the goal.'; return; }
+    if (!(target > 0)) { $('#goalErr').textContent = 'Enter a target above zero.'; return; }
+    if (by && !/^\d{4}-\d{2}$/.test(by)) { $('#goalErr').textContent = 'Write the month as YYYY-MM, like 2027-03.'; return; }
+    if (by && by < curMonth()) { $('#goalErr').textContent = 'Pick this month or a later one.'; return; }
+    $('#goalErr').textContent = '';
+    main.goals.push({ id: newId(), name, target, deadline: by, saved: 0, log: [], created: Date.now() });
+    commitMain();
+    $('#goalName').value = ''; $('#goalTarget').value = ''; $('#goalBy').value = ''; $('#goalName').focus();
   });
   $('#wishForm').addEventListener('submit', (e) => {
     e.preventDefault();
@@ -673,7 +830,7 @@ details.bought .row { opacity: 0.8; }
   let tab = 'spending';
   try { tab = localStorage.getItem(TAB_KEY) || tab; } catch (e) {}
   const hash = location.hash.slice(1);
-  if (['spending', 'budgets', 'wishlist', 'settings'].includes(hash)) tab = hash;
+  if (['spending', 'savings', 'budgets', 'wishlist', 'settings'].includes(hash)) tab = hash;
   showTab(tab);
   render();
 
