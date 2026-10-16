@@ -2,6 +2,13 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
 <meta name="claude:viewport-fit-sides" content="cover">
+<meta name="theme-color" content="#1C6A50">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-title" content="Ledger">
+<meta name="apple-mobile-web-app-status-bar-style" content="default">
+<link rel="manifest" href="manifest.webmanifest">
+<link rel="apple-touch-icon" href="icons/icon-180.png">
 <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:opsz,wght@12..96,600;12..96,800&family=Public+Sans:wght@400;500;600&family=JetBrains+Mono:wght@400;600&display=swap">
 <style>
 /* Layout: one ledger column. Balance band on top, tabbed panels (spending, budgets, wishlist, settings) below. */
@@ -29,8 +36,14 @@
   color-scheme: dark;
 }
 * { box-sizing: border-box; }
+html { -webkit-text-size-adjust: 100%; }
+:root { padding-top: env(safe-area-inset-top, 0px); padding-bottom: env(safe-area-inset-bottom, 0px); }
+button, label.btn { -webkit-tap-highlight-color: transparent; }
+.note { color: var(--muted); font-size: 0.85rem; margin: 0; }
+.note:empty { display: none; }
+.visually-hidden { position: absolute; width: 1px; height: 1px; opacity: 0; overflow: hidden; }
 [hidden] { display: none !important; }
-body { background: var(--bg); color: var(--ink); font-family: var(--f-body); font-size: 15px; line-height: 1.5; }
+body { margin: 0; background: var(--bg); color: var(--ink); font-family: var(--f-body); font-size: 15px; line-height: 1.5; }
 .app { max-width: 860px; margin: 0 auto; padding-block: 20px 72px; padding-left: max(16px, env(safe-area-inset-left, 0px)); padding-right: max(16px, env(safe-area-inset-right, 0px)); display: grid; gap: 20px; }
 h1, h2, h3 { font-family: var(--f-display); margin: 0; text-wrap: balance; }
 button, input, select { font: inherit; color: inherit; }
@@ -158,6 +171,8 @@ details.bought .row { opacity: 0.8; }
 .danger { color: var(--bad); border-color: var(--bad); }
 
 @media (prefers-reduced-motion: no-preference) { .bar span { transition: width .4s ease; } }
+/* iPhone zooms into inputs under 16px; keep them at 16px on touch screens */
+@media (pointer: coarse) { input, select, .b-limit input, .goal-move input { font-size: 16px; } }
 </style>
 
 <div class="app">
@@ -302,6 +317,21 @@ details.bought .row { opacity: 0.8; }
       <h3>Where your data lives</h3>
       <p id="storeNote"></p>
     </div>
+    <div class="setting" id="backupBox">
+      <h3>Backup</h3>
+      <p>Your data is stored only on this device. Save a backup file every so often so you don't lose it if you delete the app or change phones.</p>
+      <div class="fields">
+        <button class="btn" data-act="backup">Save backup</button>
+        <label class="btn ghost" for="restoreFile">Restore from backup</label>
+        <input id="restoreFile" class="visually-hidden" type="file" accept="application/json,.json">
+      </div>
+      <div class="fields" id="restoreConfirm" hidden>
+        <p class="pf-text" id="restoreText"></p>
+        <button class="btn" data-act="restore-yes">Replace my data</button>
+        <button class="btn ghost" data-act="restore-no">Cancel</button>
+      </div>
+      <p class="note" id="backupMsg"></p>
+    </div>
     <div class="setting">
       <h3>Start over</h3>
       <p>Deletes your balance, every transaction, budget and wishlist item. This can't be undone.</p>
@@ -327,7 +357,7 @@ details.bought .row { opacity: 0.8; }
   let cloud = null;
   let ready = false;
   let armedKey = null, armedTimer = null;
-  let pendingSave = null;
+  let pendingSave = null, pendingRestore = null;
   const goalErrs = {};
 
   // ---------- dates & money ----------
@@ -379,7 +409,7 @@ details.bought .row { opacity: 0.8; }
   // ---------- saving ----------
   function setSync(state, text) {
     const el = $('#sync'); el.dataset.state = state;
-    el.textContent = text || ({ ok: mode === 'cloud' ? 'Saved to your account' : 'Saved in this browser', saving: 'Saving…', loading: 'Loading…' }[state] || '');
+    el.textContent = text || ({ ok: mode === 'cloud' ? 'Saved to your account' : 'Saved on this device', saving: 'Saving…', loading: 'Loading…' }[state] || '');
   }
   function saveLocal() {
     try { localStorage.setItem(LS_KEY, JSON.stringify({ main, txs })); setSync('ok'); }
@@ -486,7 +516,8 @@ details.bought .row { opacity: 0.8; }
     const sp = $('#savePct'); if (document.activeElement !== sp) sp.value = main.savePct ?? 20;
     $('#storeNote').textContent = mode === 'cloud'
       ? 'Saved privately to your Claude account. Only you can see it, and it follows you to any device where you open this page.'
-      : 'Saved in this browser only. Clearing your browser data will erase it, and it won\'t appear on other devices.';
+      : 'Saved on this device only. Deleting the app or clearing Safari data erases it, so keep a backup.';
+    $('#backupBox').hidden = mode === 'cloud';
     $('#clearBtn').textContent = armedKey === 'clear' ? 'Click again to delete everything' : 'Delete everything';
 
     renderCats(); renderTx(); renderBudgets(); renderWish(free, safe); renderGoals(free); renderPayFirst();
@@ -655,6 +686,37 @@ details.bought .row { opacity: 0.8; }
     commitMain(); addTx(tx);
   }
 
+  async function backup() {
+    const name = `pocket-ledger-backup-${today()}.json`;
+    const data = JSON.stringify({ app: 'pocket-ledger', version: 1, savedAt: new Date().toISOString(), main, txs });
+    const file = new File([data], name, { type: 'application/json' });
+    try {
+      if (navigator.canShare && navigator.canShare({ files: [file] })) {
+        await navigator.share({ files: [file], title: 'Pocket Ledger backup' });
+        $('#backupMsg').textContent = 'Backup ready. Save it to Files or send it to yourself.';
+        return;
+      }
+    } catch (e) { if (e && e.name === 'AbortError') return; }
+    const a = document.createElement('a');
+    a.href = URL.createObjectURL(file); a.download = name;
+    document.body.appendChild(a); a.click(); a.remove();
+    setTimeout(() => URL.revokeObjectURL(a.href), 5000);
+    $('#backupMsg').textContent = 'Backup saved to your downloads.';
+  }
+
+  function readRestore(input) {
+    const f = input.files && input.files[0]; input.value = '';
+    if (!f) return;
+    f.text().then((text) => {
+      const d = JSON.parse(text);
+      if (!d || d.app !== 'pocket-ledger' || !d.main || !Array.isArray(d.txs)) throw new Error('bad');
+      pendingRestore = d;
+      const when = d.savedAt ? new Date(d.savedAt).toLocaleString(undefined, { dateStyle: 'medium', timeStyle: 'short' }) : 'an unknown date';
+      $('#restoreText').textContent = `Replace everything in the app with the backup from ${when}?`;
+      $('#restoreConfirm').hidden = false; $('#backupMsg').textContent = '';
+    }).catch(() => { $('#backupMsg').textContent = "That file isn't a Pocket Ledger backup."; });
+  }
+
   // ---------- tabs ----------
   function showTab(name) {
     for (const t of ['spending', 'savings', 'budgets', 'wishlist', 'settings']) {
@@ -722,6 +784,13 @@ details.bought .row { opacity: 0.8; }
     if (act === 'del-tx') return arm('del-tx:' + id, () => delTx(id));
     if (act === 'del-bud') return arm('del-bud:' + id, () => { main.budgets = main.budgets.filter((b) => b.id !== id); commitMain(); });
     if (act === 'del-wish') return arm('del-wish:' + id, () => { main.wishlist = main.wishlist.filter((w) => w.id !== id); commitMain(); });
+    if (act === 'backup') return backup();
+    if (act === 'restore-no') { pendingRestore = null; $('#restoreConfirm').hidden = true; return; }
+    if (act === 'restore-yes' && pendingRestore) {
+      main = { ...blankMain(), ...pendingRestore.main }; txs = pendingRestore.txs; pendingRestore = null;
+      $('#restoreConfirm').hidden = true; $('#backupMsg').textContent = 'Backup restored.';
+      ready = true; return commitMain();
+    }
     if (act === 'buy') return buyWish(id);
     if (act === 'save-for') {
       const w = main.wishlist.find((x) => x.id === id); if (!w) return;
@@ -760,6 +829,7 @@ details.bought .row { opacity: 0.8; }
 
   document.addEventListener('change', (e) => {
     const el = e.target;
+    if (el.id === 'restoreFile') return readRestore(el);
     if (el.name === 'txType') return renderCats();
     if (el.id === 'savePct') { main.savePct = Math.max(0, Math.min(90, Math.round(Number(el.value) || 0))); return commitMain(); }
     if (el.id === 'currency') { main.currency = el.value; main.currencyChosen = true; return commitMain(); }
@@ -826,6 +896,9 @@ details.bought .row { opacity: 0.8; }
   });
 
   // ---------- start ----------
+  if ('serviceWorker' in navigator && !window.claude && (location.protocol === 'https:' || location.hostname === 'localhost')) {
+    navigator.serviceWorker.register('sw.js').catch(() => {});
+  }
   $('#txDate').value = today();
   let tab = 'spending';
   try { tab = localStorage.getItem(TAB_KEY) || tab; } catch (e) {}

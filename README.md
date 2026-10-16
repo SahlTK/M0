@@ -10,3 +10,11 @@ Open `index.html` in a browser. Data is saved in that browser (localStorage). Wh
 - **Savings goals** – target, optional deadline, and how much to put aside each month to hit it. Saved money is excluded from "safe to spend".
 - **Pay yourself first** – after logging income, suggests moving a set % (default 20%) into a goal.
 - **Wishlist** – items with price and priority, marked as affordable / would eat into budgets / need X more. "I bought it" logs the expense.
+
+## Put it on your iPhone
+
+The app is an installable web app (PWA): it works offline, has its own icon and opens full screen.
+
+1. Host it: `sh build.sh` builds `dist/`. Netlify picks this up automatically through `netlify.toml`.
+2. On the iPhone, open the site in **Safari**, tap **Share → Add to Home Screen**.
+3. Data stays on the phone. Use **Settings → Save backup** now and then.
